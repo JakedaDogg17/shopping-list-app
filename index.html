@@ -163,8 +163,12 @@
     </div>
   </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-  const STORAGE_KEY = "shopping-list-items";
+  const SUPABASE_URL = "https://caqyyatczxdvkcthjqdt.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_FknWff6_5xnc2uuBO2KLGw_eIVZKiYL";
+  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
   const listEl = document.getElementById("list");
   const emptyMsg = document.getElementById("emptyMsg");
   const countMsg = document.getElementById("countMsg");
@@ -172,19 +176,18 @@
   const form = document.getElementById("addForm");
   const input = document.getElementById("itemInput");
 
-  let items = loadItems();
+  let items = [];
 
-  function loadItems() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
+  async function loadItems() {
+    const { data, error } = await supabaseClient
+      .from("shopping_items")
+      .select("*")
+      .order("created_at", { ascending: true });
+    if (error) {
+      console.error("Failed to load items:", error);
       return [];
     }
-  }
-
-  function saveItems() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    return data;
   }
 
   function render() {
@@ -224,23 +227,44 @@
     clearCheckedBtn.style.display = checkedCount > 0 ? "inline" : "none";
   }
 
-  function addItem(text) {
+  async function addItem(text) {
     const trimmed = text.trim();
     if (!trimmed) return;
-    items.push({ id: Date.now() + Math.random(), text: trimmed, checked: false });
-    saveItems();
+    const { data, error } = await supabaseClient
+      .from("shopping_items")
+      .insert({ text: trimmed, checked: false })
+      .select()
+      .single();
+    if (error) {
+      console.error("Failed to add item:", error);
+      return;
+    }
+    items.push(data);
     render();
   }
 
-  function toggleItem(id) {
+  async function toggleItem(id) {
+    const target = items.find((i) => i.id === id);
+    if (!target) return;
+    const { error } = await supabaseClient
+      .from("shopping_items")
+      .update({ checked: !target.checked })
+      .eq("id", id);
+    if (error) {
+      console.error("Failed to update item:", error);
+      return;
+    }
     items = items.map((i) => (i.id === id ? { ...i, checked: !i.checked } : i));
-    saveItems();
     render();
   }
 
-  function deleteItem(id) {
+  async function deleteItem(id) {
+    const { error } = await supabaseClient.from("shopping_items").delete().eq("id", id);
+    if (error) {
+      console.error("Failed to delete item:", error);
+      return;
+    }
     items = items.filter((i) => i.id !== id);
-    saveItems();
     render();
   }
 
@@ -251,13 +275,22 @@
     input.focus();
   });
 
-  clearCheckedBtn.addEventListener("click", () => {
+  clearCheckedBtn.addEventListener("click", async () => {
+    const checkedIds = items.filter((i) => i.checked).map((i) => i.id);
+    if (checkedIds.length === 0) return;
+    const { error } = await supabaseClient.from("shopping_items").delete().in("id", checkedIds);
+    if (error) {
+      console.error("Failed to clear checked items:", error);
+      return;
+    }
     items = items.filter((i) => !i.checked);
-    saveItems();
     render();
   });
 
-  render();
+  (async () => {
+    items = await loadItems();
+    render();
+  })();
 </script>
 </body>
 </html>
